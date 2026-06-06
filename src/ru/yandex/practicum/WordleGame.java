@@ -36,7 +36,7 @@ public class WordleGame {
     private final List<GuessRecord> guessHistory = new ArrayList<>(); // История всех ходов
 
     // Класс для хранения ходов
-        private record GuessRecord(String word, String hint) {
+    private record GuessRecord(String word, String hint) {
     }
 
     public WordleGame(WordleDictionary dictionary, int steps, PrintWriter log) {
@@ -61,10 +61,7 @@ public class WordleGame {
         // Проверка на победу
         if (word.equals(answer)) {
             this.won = true;
-        }
-
-        // Проверка наличия слова в словаре
-        else if (!dictionary.contains(word)) {
+        } else if (!dictionary.contains(word)) { // Проверка наличия слова в словаре
             log.printf("[WARNING] Слово \"%s\" отсутствует в словаре %s\n", word, LocalDateTime.now());
             throw new WordNotFoundInDictionary(word);
         }
