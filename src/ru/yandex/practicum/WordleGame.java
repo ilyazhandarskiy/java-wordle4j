@@ -6,23 +6,7 @@ import ru.yandex.practicum.exceptions.WrongInputWordExeption;
 
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-
-
-/*
-в этом классе хранится словарь и состояние игры
-    текущий шаг
-    всё что пользователь вводил
-    правильный ответ
-
-в этом классе нужны методы, которые
-    проанализируют совпадение слова с ответом
-    предложат слово-подсказку с учётом всего, что вводил пользователь ранее
-
-не забудьте про специальные типы исключений для игровых и неигровых ошибок
- */
-
+import java.util.*;
 
 public class WordleGame {
 
@@ -32,8 +16,14 @@ public class WordleGame {
     private boolean gameOver = false;           // Флаг окончания игры
     private boolean won = false;                // Флаг победы
     private final PrintWriter log;              // Логгер событий
+    private final Random random = new Random();
 
     private final List<GuessRecord> guessHistory = new ArrayList<>(); // История всех ходов
+
+    //коллекции для подсказок
+    private final Map<Integer, Character> fixedPositions = new HashMap<>(); // Точные позиции букв
+    private final Map<Integer, Set<Character>> forbiddenPositions = new HashMap<>(); // Буквы, которых не может быть на позиции
+    private final Set<Character> correctLetters = new HashSet<>(); // Буквы, которые должно содержать слово
 
     // Класс для хранения ходов
     private record GuessRecord(String word, String hint) {
@@ -108,128 +98,157 @@ public class WordleGame {
     public String generateHint(String guess) {
         int len = answer.length();
         StringBuilder hint = new StringBuilder(len);
-        boolean[] usedInAnswer = new boolean[len]; // Отмечаем уже использованные буквы ответа
+        boolean[] usedInAnswer = new boolean[len];
+        Map<Character, Integer> answerLetterCount = new HashMap<>();
 
-        // Пишем в hint прочерки как начальное значение подсказки
+        // Считаем количество каждой буквы в ответе
+        for (char c : answer.toCharArray()) {
+            answerLetterCount.merge(c, 1, Integer::sum);
+        }
+
+        // Инициализация прочерками
         hint.repeat("-", len);
 
-        // Первый проход: ищем точные совпадения '+'
+        // ПЕРВЫЙ ПРОХОД: точные совпадения '+'
         for (int i = 0; i < len; i++) {
             if (guess.charAt(i) == answer.charAt(i)) {
                 hint.setCharAt(i, '+');
                 usedInAnswer[i] = true;
+                answerLetterCount.merge(guess.charAt(i), -1, Integer::sum);
             }
         }
 
-        // Второй проход: ищем буквы '^' (есть в слове, но не на этом месте)
+        // ВТОРОЙ ПРОХОД: буквы '^' (есть, но не на этом месте)
         for (int i = 0; i < len; i++) {
             if (hint.charAt(i) == '-') {
                 char c = guess.charAt(i);
-                for (int j = 0; j < len; j++) {
-                    if (!usedInAnswer[j] && answer.charAt(j) == c) {
-                        hint.setCharAt(i, '^');
-                        usedInAnswer[j] = true;
-                        break;
+                // Проверяем, остались ли ещё неиспользованные вхождения этой буквы
+                if (answerLetterCount.getOrDefault(c, 0) > 0) {
+                    // Ищем позицию в ответе для этой буквы
+                    for (int j = 0; j < len; j++) {
+                        if (!usedInAnswer[j] && answer.charAt(j) == c) {
+                            hint.setCharAt(i, '^');
+                            usedInAnswer[j] = true;
+                            answerLetterCount.merge(c, -1, Integer::sum);
+                            break;
+                        }
                     }
                 }
             }
         }
 
+        updateLetterSets(guess, hint.toString());
         return hint.toString();
+    }
+
+    // метод фиксирует списки корректных и некорректных букв в слове
+    private void updateLetterSets(String guess, String hint) {
+        for (int i = 0; i < guess.length(); i++) {
+            //записали буквы, которые точно на своих местах
+            if (hint.charAt(i) == '+') {
+                fixedPositions.put(i, guess.charAt(i));
+                correctLetters.add(guess.charAt(i));
+            }
+            //буквы, которые точно не на своей позиции
+            if (hint.charAt(i) == '-' || hint.charAt(i) == '^') {
+                forbiddenPositions.computeIfAbsent(i, k -> new HashSet<>()).add(guess.charAt(i));
+            }
+
+            //корректные буквы в слове в целом
+            if (hint.charAt(i) == '^') {
+                correctLetters.add(guess.charAt(i));
+            }
+        }
     }
 
     // Предоставляет слово-подсказку
     public String getHintWord() throws WordleGameException {
-        // Находим максимальное количество плюсов среди всех подсказок в истории
-        int maxPlusCount = getMaxPlusCountFromHistory();
 
-        // Пытаемся найти слово, увеличивая количество плюсов от maxPlusCount+1 до длины слова
-        for (int targetPlusCount = maxPlusCount + 1; targetPlusCount <= answer.length(); targetPlusCount++) {
-            String result = findFirstCandidate(targetPlusCount);
-            if (result != null) {
-                log.printf("[INFO] Подсказка: %s (плюсов: %d, максимально было: %d) %s\n",
-                        result, targetPlusCount, maxPlusCount, LocalDateTime.now());
-                return result;
-            }
-        }
-
-        // Если ничего не нашли даже с максимальным количеством плюсов - исключение
-        // (но такого быть не должно по идее, так как слово загадано из словаря)
-        log.printf("[ERROR] Не найдено подходящее слово-подсказка %s\n", LocalDateTime.now());
-        throw new WordleGameException("Подсказки отсуствуют.");
-    }
-
-    // Находит максимальное количество плюсов среди всех подсказок в истории
-    private int getMaxPlusCountFromHistory() {
         if (guessHistory.isEmpty()) {
-            return 0;
+            return dictionary.getRandomWord();
         }
 
-        int maxPlus = 0;
-        for (GuessRecord record : guessHistory) {
-            int plusCount = countPlus(record.hint);
-            if (plusCount > maxPlus) {
-                maxPlus = plusCount;
+        List<String> allWords = dictionary.getWords();
+
+        // список кандидатов
+        List<String> candidateWords = new ArrayList<>();
+
+        for (String candidate : allWords) {
+            if (checkWordContainsInHistory(candidate)) {
+                continue;
+            }
+
+            if (checkCandidatesWordMatch(candidate)) {
+                candidateWords.add(candidate);
             }
         }
-        return maxPlus;
-    }
 
-    // Поиск первого подходящего кандидата с заданным количеством плюсов
-    private String findFirstCandidate(int targetPlusCount) {
-        for (String word : dictionary.getWords()) {
-            String normalized = WordleDictionary.normalizeWord(word);
-
-            if (isWordUsed(normalized)) continue;      // Пропускаем уже использованные слова
-            if (!fitsAllHistory(normalized)) continue; // Проверяем совместимость с историей
-
-            // Проверяем количество плюсов
-            if (countPlus(generateHint(normalized)) == targetPlusCount) {
-                return normalized;
-            }
+        if (candidateWords.isEmpty()) {
+            log.printf("[ERROR] Не найдено подходящее слово-подсказка %s\n", LocalDateTime.now());
+            throw new WordleGameException("Подсказки отсуствуют.");
         }
-        return null;
+
+        String result = candidateWords.get(random.nextInt(candidateWords.size()));
+        log.printf("[INFO] Подсказка: %s %s\n", result, LocalDateTime.now());
+
+        return result;
     }
 
-    // Проверка, использовалось ли слово ранее
-    private boolean isWordUsed(String word) {
-        for (GuessRecord record : guessHistory) {
-            if (record.word.equals(word)) {
+    // проверяем наличие слова в истории
+    public boolean checkWordContainsInHistory(String guess) {
+        for (GuessRecord guessRecord : guessHistory) {
+            if (guessRecord.word.equals(guess)) {
                 return true;
             }
         }
         return false;
     }
 
-    // Проверяет, подходит ли кандидат под всю историю игры
-    private boolean fitsAllHistory(String candidate) {
-        for (GuessRecord record : guessHistory) {
-            if (!fitsGuess(candidate, record.word, record.hint)) {
+    public boolean checkCandidatesWordMatch(String guess) {
+
+        // проверяем по спискам корректных и некорректных символов
+        for (int i = 0; i < guess.length(); i++) {
+            //проверяем соответствуют ли символы уже найденным буквам
+            if (fixedPositions.containsKey(i)) {
+                if (guess.charAt(i) != fixedPositions.get(i)) {
+                    return false;
+                }
+            }
+            //проверяем отсутствие символов в forbiddenPositions
+            if (forbiddenPositions.containsKey(i)) {
+                Set<Character> forbiddenCharacters = forbiddenPositions.get(i);
+                for (char c : forbiddenCharacters) {
+                    if (c == guess.charAt(i)) {
+                        return false;
+                    }
+                }
+            }
+
+            // проверка на совместимость с последней попыткой - чтобы отгадывать из оставшихся
+            // неотгаданных по информации из подсказки '^'
+            if (!checkAllLettersMatchWithCorrectList(guess)) {
+                return false;
+            }
+        }
+
+        //если все проверки пройдены
+        return true;
+    }
+
+    private boolean checkAllLettersMatchWithCorrectList(String guess) {
+        for (Character correctLetter : correctLetters) {
+            boolean letterFound = false;
+            for (int i = 0; i < guess.length(); i++) {
+                if (guess.charAt(i) == correctLetter) {
+                    letterFound = true;
+                    break;
+                }
+            }
+            if (!letterFound) {
                 return false;
             }
         }
         return true;
     }
 
-    // Проверяет соответствие кандидата одному конкретному ходу.
-    // Анализируем только символы '+', '^' и '-' игнорируются
-    private boolean fitsGuess(String candidate, String guess, String hint) {
-        int len = answer.length();
-
-        for (int i = 0; i < len; i++) {
-            if (hint.charAt(i) == '+' && candidate.charAt(i) != guess.charAt(i)) {
-                return false; // Не совпадает буква на позиции, где должно быть точное совпадение
-            }
-        }
-        return true;
-    }
-
-    // Подсчёт количества символов '+' в подсказке
-    private int countPlus(String hint) {
-        int count = 0;
-        for (int i = 0; i < hint.length(); i++) {
-            if (hint.charAt(i) == '+') count++;
-        }
-        return count;
-    }
 }

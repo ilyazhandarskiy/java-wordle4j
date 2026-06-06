@@ -25,18 +25,27 @@ public class Wordle {
     private static final String LOG_FILE_NAME = "log.txt";
     private static final int MAX_ATTEMPTS_IN_GAME = 6;
 
-
     public static void main(String[] args) {
 
-        try (PrintWriter log = new PrintWriter(new FileOutputStream(LOG_FILE_NAME), true)) {
+        try (PrintWriter log = new PrintWriter(
+                new OutputStreamWriter(
+                        new FileOutputStream(LOG_FILE_NAME, true), StandardCharsets.UTF_8), true)) {
             //создаем лог файл
             log.println("[INFO] Создан файл лога " + LocalDateTime.now());
 
             //создаем загрузчик словаря из файла
             WordleDictionaryLoader loader = new WordleDictionaryLoader(log);
 
-            //получаем итоговый словарь из загрузчика словаря
-            WordleDictionary dictionary = loader.getWordleDictionary(WORDS_FILE_NAME);
+            WordleDictionary dictionary;
+
+            try {
+                //получаем итоговый словарь из загрузчика словаря
+                dictionary = loader.getWordleDictionary(WORDS_FILE_NAME);
+            } catch (GameConfigurationException e) {
+                System.out.println(e.getMessage());
+                System.out.println("Попробуйте позже.");
+                return;
+            }
 
             //создаем игровой процесс
             WordleGame game = new WordleGame(dictionary, MAX_ATTEMPTS_IN_GAME, log);
@@ -56,7 +65,6 @@ public class Wordle {
                         userInput = game.getHintWord();
                     } catch (WordleGameException e) {
                         System.out.println(e.getMessage());
-                        System.out.println(" Попробуйте еще раз.");
                         continue;
                     }
                     System.out.println(userInput);
@@ -85,10 +93,8 @@ public class Wordle {
                 }
                 System.out.printf("   Осталось попыток: %s\n", game.getRemainingSteps());
             }
-        } catch (GameConfigurationException e) {
-            System.err.println("Критическая ошибка при загрузке игры. " + e.getMessage());
         } catch (Exception e) {
-            System.err.println("Непредвиденная ошибка " + e.getMessage());
+            System.err.println("Непредвиденная ошибка. Обратитесь в поддержку.");
         }
     }
 

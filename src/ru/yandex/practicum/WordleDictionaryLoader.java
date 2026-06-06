@@ -36,7 +36,7 @@ public class WordleDictionaryLoader {
 
             if (words.isEmpty()) {
                 log.println("[ERROR] Невозможно продолжить игру, в файле отсутствуют подходящие слова " + LocalDateTime.now());
-                throw new GameConfigurationException("Невозможно продолжить игру, в файле отсутствуют подходящие слова");
+                throw new GameConfigurationException("Невозможно продолжить игру, в файле отсутствуют подходящие слова.");
             }
 
             return new WordleDictionary(words);
