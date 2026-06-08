@@ -57,6 +57,8 @@ public class Wordle {
             Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
 
             while (true) {
+                System.out.print("Введите слово или нажмите Enter для подсказки >> ");
+
                 String userInput = scanner.nextLine();
 
                 //Обработка подсказок
@@ -68,6 +70,8 @@ public class Wordle {
                         continue;
                     }
                     System.out.println(userInput);
+                } else {
+                    System.out.println(WordleDictionary.normalizeWord(userInput));
                 }
 
                 String hint;
@@ -75,20 +79,20 @@ public class Wordle {
                 try {
                     hint = game.makeGuess(userInput);
                 } catch (WordNotFoundInDictionary | WrongInputWordExeption e) {
-                    System.out.print(e.getMessage());
-                    System.out.println(" Попробуйте еще раз.");
+                    System.out.println(e.getMessage());
+                    System.out.println("Попробуйте еще раз.");
                     continue;
                 }
                 //выводим подсказку
                 System.out.print(hint);
 
                 if (game.isWon()) {
-                    System.out.printf("\nВы угадали! Было загадано слово: \"%s\"\n", game.getAnswer());
+                    System.out.printf("\nВы угадали! Было загадано слово: \"%s\".\n", game.getAnswer());
                     break;
                 }
 
                 if (game.isGameOver()) {
-                    System.out.printf("\nВы проиграли... Было загадано слово: \"%s\"\n", game.getAnswer());
+                    System.out.printf("\nВы проиграли... Было загадано слово: \"%s\".\n", game.getAnswer());
                     break;
                 }
                 System.out.printf("   Осталось попыток: %s\n", game.getRemainingSteps());
@@ -105,6 +109,6 @@ public class Wordle {
         System.out.println("  ^ — буква есть в слове, но не на этом месте");
         System.out.println("  - — такой буквы нет в слове");
         System.out.printf("У вас %s попыток.\n", MAX_ATTEMPTS_IN_GAME);
-        System.out.println("Введите слово или нажмите Enter для получения подсказки:");
+        System.out.println();
     }
 }

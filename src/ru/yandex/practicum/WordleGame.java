@@ -10,6 +10,10 @@ import java.util.*;
 
 public class WordleGame {
 
+    private static final char CORRECT_POSITION = '+';
+    private static final char OTHER_POSITION = '^';
+    private static final char INCORRECT_POSITION = '-';
+
     private final String answer;                // Загаданное слово
     private int steps;                          // Оставшиеся попытки
     private final WordleDictionary dictionary;  // Словарь слов
@@ -22,8 +26,10 @@ public class WordleGame {
 
     //коллекции для подсказок
     private final Map<Integer, Character> fixedPositions = new HashMap<>(); // Точные позиции букв
-    private final Map<Integer, Set<Character>> forbiddenPositions = new HashMap<>(); // Буквы, которых не может быть на позиции
+    // Буквы, которых не может быть на позиции - для слов с '^'
+    private final Map<Integer, Set<Character>> forbiddenPositions = new HashMap<>();
     private final Set<Character> correctLetters = new HashSet<>(); // Буквы, которые должно содержать слово
+    private final Set<Character> incorrectLetters = new HashSet<>(); // Буквы, которые НЕ должно содержать слово
 
     // Класс для хранения ходов
     private record GuessRecord(String word, String hint) {
@@ -50,7 +56,8 @@ public class WordleGame {
 
         // Проверка на победу
         if (word.equals(answer)) {
-            this.won = true;
+            won = true;
+            gameOver = true;
         } else if (!dictionary.contains(word)) { // Проверка наличия слова в словаре
             log.printf("[WARNING] Слово \"%s\" отсутствует в словаре %s\n", word, LocalDateTime.now());
             throw new WordNotFoundInDictionary(word);
@@ -58,6 +65,7 @@ public class WordleGame {
 
         String hint = generateHint(word); // Генерируем подсказку
         guessHistory.add(new GuessRecord(word, hint)); // Сохраняем в историю
+
         steps--; // Уменьшаем количество попыток
 
         log.printf("[INFO] Ход: %s -> %s (осталось попыток: %s) %s\n", word, hint, steps, LocalDateTime.now());
@@ -97,7 +105,7 @@ public class WordleGame {
     // Генерация подсказки
     public String generateHint(String guess) {
         int len = answer.length();
-        StringBuilder hint = new StringBuilder(len);
+        StringBuilder hint = new StringBuilder(String.valueOf(INCORRECT_POSITION).repeat(len)); // Инициализация прочерками
         boolean[] usedInAnswer = new boolean[len];
         Map<Character, Integer> answerLetterCount = new HashMap<>();
 
@@ -106,13 +114,10 @@ public class WordleGame {
             answerLetterCount.merge(c, 1, Integer::sum);
         }
 
-        // Инициализация прочерками
-        hint.repeat("-", len);
-
         // ПЕРВЫЙ ПРОХОД: точные совпадения '+'
         for (int i = 0; i < len; i++) {
             if (guess.charAt(i) == answer.charAt(i)) {
-                hint.setCharAt(i, '+');
+                hint.setCharAt(i, CORRECT_POSITION);
                 usedInAnswer[i] = true;
                 answerLetterCount.merge(guess.charAt(i), -1, Integer::sum);
             }
@@ -127,7 +132,7 @@ public class WordleGame {
                     // Ищем позицию в ответе для этой буквы
                     for (int j = 0; j < len; j++) {
                         if (!usedInAnswer[j] && answer.charAt(j) == c) {
-                            hint.setCharAt(i, '^');
+                            hint.setCharAt(i, OTHER_POSITION);
                             usedInAnswer[j] = true;
                             answerLetterCount.merge(c, -1, Integer::sum);
                             break;
@@ -136,30 +141,39 @@ public class WordleGame {
                 }
             }
         }
-
-        updateLetterSets(guess, hint.toString());
+        //обновляем сеты коллекции по подсказкам
+        updateLetterCollections(guess, hint.toString());
         return hint.toString();
     }
 
     // метод фиксирует списки корректных и некорректных букв в слове
-    private void updateLetterSets(String guess, String hint) {
+    private void updateLetterCollections(String guess, String hint) {
         for (int i = 0; i < guess.length(); i++) {
             //записали буквы, которые точно на своих местах
-            if (hint.charAt(i) == '+') {
+            if (hint.charAt(i) == CORRECT_POSITION) {
                 fixedPositions.put(i, guess.charAt(i));
                 correctLetters.add(guess.charAt(i));
             }
-            //буквы, которые точно не на своей позиции
-            if (hint.charAt(i) == '-' || hint.charAt(i) == '^') {
+
+            //добавляем в список корректных букв в слове и некорректных позиций в слове
+            if (hint.charAt(i) == OTHER_POSITION) {
+                correctLetters.add(guess.charAt(i));
                 forbiddenPositions.computeIfAbsent(i, k -> new HashSet<>()).add(guess.charAt(i));
             }
+        }
 
-            //корректные буквы в слове в целом
-            if (hint.charAt(i) == '^') {
-                correctLetters.add(guess.charAt(i));
+        // делаю второй проход для того чтобы в incorrectLetters добавлять только после
+        // того когда определились все correctLetters в кандидате
+        for (int i = 0; i < guess.length(); i++) {
+            //буквы, которые точно не на своей позиции
+            if (hint.charAt(i) == INCORRECT_POSITION) {
+                if (!correctLetters.contains(guess.charAt(i))) {
+                    incorrectLetters.add(guess.charAt(i));
+                }
             }
         }
     }
+
 
     // Предоставляет слово-подсказку
     public String getHintWord() throws WordleGameException {
@@ -194,7 +208,7 @@ public class WordleGame {
         return result;
     }
 
-    // проверяем наличие слова в истории
+    // проверяем наличие слова в истории ходов
     public boolean checkWordContainsInHistory(String guess) {
         for (GuessRecord guessRecord : guessHistory) {
             if (guessRecord.word.equals(guess)) {
@@ -204,17 +218,21 @@ public class WordleGame {
         return false;
     }
 
+    // Проверка слова-кандидата:
+    // 1. соответствует ли кандидат уже отгаданным позициям в слове '+'
+    // 2. проверяем кандидата на отсутствие букв в позициях, где их точно быть не должно по символу '^'
+    // 3. проверяем кандидата на список символов, которых точно не должно быть в слове '-'
+    // 4. проверяем кандидата, что все символы из '^' и '+' присутствуют в слове
     public boolean checkCandidatesWordMatch(String guess) {
-
         // проверяем по спискам корректных и некорректных символов
         for (int i = 0; i < guess.length(); i++) {
-            //проверяем соответствуют ли символы уже найденным буквам
+            //проверяем соответствуют ли символы уже НАЙДЕННЫМ буквам
             if (fixedPositions.containsKey(i)) {
                 if (guess.charAt(i) != fixedPositions.get(i)) {
                     return false;
                 }
             }
-            //проверяем отсутствие символов в forbiddenPositions
+            //проверяем отсутствие символов в списке букв forbiddenPositions
             if (forbiddenPositions.containsKey(i)) {
                 Set<Character> forbiddenCharacters = forbiddenPositions.get(i);
                 for (char c : forbiddenCharacters) {
@@ -223,19 +241,23 @@ public class WordleGame {
                     }
                 }
             }
-
-            // проверка на совместимость с последней попыткой - чтобы отгадывать из оставшихся
-            // неотгаданных по информации из подсказки '^'
-            if (!checkAllLettersMatchWithCorrectList(guess)) {
+            //проверка на некорректные символы
+            if (isLetterInIncorrectList(guess.charAt(i))) {
                 return false;
             }
+        }
+
+        // проверка на наличие всех корректных символов
+        if (!isValidByCorrectLetters(guess)) {
+            return false;
         }
 
         //если все проверки пройдены
         return true;
     }
 
-    private boolean checkAllLettersMatchWithCorrectList(String guess) {
+    //проверка, что слово содержит все корректные буквы из списка correctLetters
+    private boolean isValidByCorrectLetters(String guess) {
         for (Character correctLetter : correctLetters) {
             boolean letterFound = false;
             for (int i = 0; i < guess.length(); i++) {
@@ -251,4 +273,13 @@ public class WordleGame {
         return true;
     }
 
+    //проверка, что в слове есть совпадение с некорректными символами incorrectLetters
+    private boolean isLetterInIncorrectList(char guess) {
+        for (Character incorrectLetter : incorrectLetters) {
+            if (guess == incorrectLetter) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

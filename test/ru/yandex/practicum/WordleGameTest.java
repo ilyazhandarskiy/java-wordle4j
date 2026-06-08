@@ -7,6 +7,7 @@ import ru.yandex.practicum.exceptions.WrongInputWordExeption;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
@@ -21,7 +22,7 @@ class WordleGameTest {
 
     // Предсказуемый словарь для тестов
     private static final List<String> TEST_WORDS = Arrays.asList(
-            "котте", "домой", "мамам", "папам", "солнце", "сокол"
+            "котте", "домой", "мамам", "папам", "слово", "сокол", "олово"
     );
 
     @BeforeEach
@@ -40,7 +41,7 @@ class WordleGameTest {
     private WordleGame createGameWithFixedAnswer(String answer) throws Exception {
         WordleGame game = new WordleGame(dictionary, 6, log);
         // Используем рефлексию для замены загаданного слова
-        java.lang.reflect.Field answerField = WordleGame.class.getDeclaredField("answer");
+        Field answerField = WordleGame.class.getDeclaredField("answer");
         answerField.setAccessible(true);
         answerField.set(game, answer);
         return game;
@@ -90,7 +91,7 @@ class WordleGameTest {
 
             assertEquals("+++++", hint);
             assertTrue(game.isWon());
-            assertFalse(game.isGameOver()); // Игра закончена победой, но флаг gameOver не ставится автоматически
+            assertTrue(game.isGameOver()); // Игра закончена победой, но флаг gameOver не ставится автоматически
             assertEquals(5, game.getRemainingSteps()); // Попытки уменьшились
         }
 
@@ -163,20 +164,16 @@ class WordleGameTest {
         }
 
         @Test
-        @DisplayName("Подсказка прогрессирует после ходов")
+        @DisplayName("Слово не попадается в подсказке после хода")
         void hintShouldProgressAfterGuesses() throws Exception {
-            WordleGame game = createGameWithFixedAnswer("сокол");
+            WordleGame game = createGameWithFixedAnswer("олово");
 
-            // Делаем первый ход
-            game.makeGuess("котте");
-            String firstHint = game.getHintWord();
+            String firstGuess = "домой";
+            // Делаем ход
+            game.makeGuess(firstGuess);
 
-            // Делаем второй ход
-            game.makeGuess("домой");
             String secondHint = game.getHintWord();
-
-            assertNotNull(firstHint);
-            assertNotNull(secondHint);
+            assertNotEquals(firstGuess, secondHint);
         }
 
     }
